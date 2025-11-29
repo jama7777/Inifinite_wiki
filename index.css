@@ -1,0 +1,477 @@
+
+@keyframes blink {
+  from, to { opacity: 1 }
+  50% { opacity: 0; }
+}
+
+@keyframes pulse {
+  0%, 100% { background-color: #f0f0f0; }
+  50% { background-color: #e0e0e0; }
+}
+
+body {
+  background-color: #ffffff;
+  color: #000000;
+  font-family: 'Kosugi', sans-serif;
+  font-size: 1.1rem; /* Set base font size for the entire app */
+  line-height: 1.6; /* Set base line height for readability */
+  margin: 0;
+  padding: 0; /* Handled by container padding mostly, but reset to 0 to allow tab bar at top */
+}
+
+/* Tab Bar Styles */
+.tab-bar {
+  display: flex;
+  align-items: flex-end;
+  background-color: #f8f8f8;
+  border-bottom: 1px solid #e0e0e0;
+  padding: 0.5rem 2rem 0 2rem;
+  margin-bottom: 2rem;
+  overflow-x: auto;
+  gap: 0.25rem;
+}
+
+.tabs-list {
+  display: flex;
+  gap: 0.25rem;
+  flex-grow: 1;
+  overflow-x: auto;
+  scrollbar-width: none; /* Hide scrollbar for cleaner look */
+}
+.tabs-list::-webkit-scrollbar {
+  display: none;
+}
+
+.tab-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  background-color: #e8e8e8;
+  border-radius: 6px 6px 0 0;
+  font-size: 0.9em;
+  color: #666;
+  cursor: pointer;
+  min-width: 100px;
+  max-width: 200px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  transition: background-color 0.2s;
+  user-select: none;
+}
+
+.tab-item:hover {
+  background-color: #e0e0e0;
+}
+
+.tab-item.active {
+  background-color: #ffffff;
+  color: #000;
+  border-color: #e0e0e0;
+  font-weight: bold;
+}
+
+.tab-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 0.5rem;
+}
+
+.tab-close-button {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 1.2em;
+  line-height: 1;
+  padding: 0 0.2rem;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.tab-close-button:hover {
+  color: #000;
+  background-color: rgba(0,0,0,0.1);
+}
+
+.new-tab-button {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  padding: 0.25rem 0.75rem;
+  color: #666;
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+}
+.new-tab-button:hover {
+  background-color: #e8e8e8;
+  color: #000;
+}
+
+
+#root {
+  max-width: 65ch; /* Optimal line length for readability */
+  margin: auto;
+  padding: 0 2rem 5rem 2rem; /* Restore content padding */
+}
+/* Reset headers to have the same font size as the body */
+h1, h2, h3, h4, h5, h6 {
+  font-size: 1em; /* 1em equals the parent font-size, which is 1.1rem from body */
+  margin: 0;
+  font-weight: normal; /* Ensure no bolding by default */
+}
+/* Reset button for link-like behavior */
+button {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.interactive-word {
+  color: #000000;
+  text-decoration: none;
+  transition: color 0.2s ease-in-out;
+}
+.interactive-word:hover {
+  color: #0000ff;
+  text-decoration: underline;
+}
+.footer-text {
+  font-size: 0.9em;
+  color: #888;
+}
+.footer-text a {
+  color: inherit;
+  text-decoration: none;
+  transition: color 0.2s ease-in-out;
+}
+.footer-text a:hover {
+  color: #0000ff;
+  text-decoration: underline;
+}
+.ascii-art {
+  font-family: monospace;
+  text-align: left; /* Aligned to the left for better block letter rendering */
+  white-space: pre;
+  color: #888;
+  margin: 2rem 0; /* Increased margin for more breathing room */
+  line-height: 1.1; /* Tighter line height for better art rendering */
+  font-size: 0.8em; /* Slightly smaller font for more detailed art */
+}
+.blinking-cursor {
+  animation: blink 1s step-end infinite;
+}
+
+/* Search Bar Styles */
+.search-container {
+  display: flex;
+  flex-direction: column; /* Stack controls vertically */
+  gap: 1rem;
+  margin-bottom: 3rem;
+}
+.search-controls {
+  display: flex;
+  width: 100%;
+  gap: 1rem;
+  align-items: center; /* Center items vertically */
+}
+
+.nav-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.search-form {
+  flex-grow: 1; /* Make form take available space */
+  position: relative; /* Anchor for the history dropdown */
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.5rem 0.2rem;
+  font: inherit; /* Inherit font from body */
+  color: inherit; /* Inherit text color */
+  border: none;
+  border-bottom: 1px solid transparent; /* No visible line by default */
+  background-color: transparent;
+  box-sizing: border-box; /* Include padding in width */
+  outline: none; /* Remove default focus outline */
+}
+
+.search-input:disabled {
+  color: #ccc;
+}
+
+.search-input::placeholder {
+  color: #000000;
+  opacity: 1; /* Override browser default lighter color */
+}
+
+.nav-button {
+  background: none;
+  border: none;
+  padding: 0.5rem 0; /* Align vertically with input */
+  font: inherit;
+  color: #000000;
+  cursor: pointer;
+  white-space: nowrap; /* Prevent "Random" from wrapping */
+}
+
+.nav-arrow {
+  font-size: 1.2em;
+  padding: 0 0.5rem;
+}
+
+.nav-button:hover:not(:disabled) {
+  color: #0000ff;
+}
+
+.nav-button:disabled,
+.nav-button[disabled] {
+  color: #ccc;
+  cursor: not-allowed;
+  pointer-events: none; /* Prevent clicks on disabled label */
+}
+
+/* Search History Dropdown */
+.search-history-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background-color: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-top: none;
+  list-style-type: none;
+  margin: 0;
+  padding: 0;
+  z-index: 10;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.search-history-item button {
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem;
+  font-size: 1em; /* Match input font size */
+}
+
+.search-history-item button:hover {
+  background-color: #f0f0f0;
+}
+
+/* AI Search Toggle Switch */
+.ai-search-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9em;
+}
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 20px;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+  border-radius: 20px;
+}
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+input:checked + .toggle-slider {
+  background-color: #0000ff;
+}
+input:checked + .toggle-slider:before {
+  transform: translateX(14px);
+}
+
+/* Document Upload Styles */
+.document-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.9em;
+  color: #555;
+}
+
+.document-name {
+  background-color: #f0f0f0;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: monospace;
+  font-size: 0.9em;
+}
+
+.clear-button {
+  background: none;
+  border: none;
+  font-size: 1.5em;
+  line-height: 1;
+  color: #aaa;
+  cursor: pointer;
+  padding: 0 0.2rem;
+}
+.clear-button:hover:not(:disabled) {
+  color: #000;
+}
+
+/* Diagram Display Styles */
+.diagram-container {
+  margin-bottom: 2rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.diagram-image {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  background-color: #fafafa;
+}
+
+.diagram-skeleton {
+  width: 100%;
+  height: 200px;
+  border-radius: 8px;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Grounding Sources */
+.grounding-sources-container {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #eee;
+  font-size: 0.9em;
+  color: #555;
+}
+.sources-list {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+}
+.source-item a {
+  color: inherit;
+  text-decoration: none;
+}
+.source-item a:hover {
+  text-decoration: underline;
+  color: #0000ff;
+}
+
+.sticky-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  text-align: center;
+  padding: 1.5rem 0;
+  background-color: #ffffff;
+}
+
+/* Document Viewer Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: #fff;
+  padding: 2rem;
+  border-radius: 8px;
+  max-width: 80ch;
+  width: 90%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 1rem;
+  margin-bottom: 1rem;
+}
+
+.modal-title {
+  font-family: monospace;
+  font-size: 1em;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.modal-close-button {
+  font-size: 1.5rem;
+  font-weight: bold;
+  line-height: 1;
+  color: #888;
+}
+.modal-close-button:hover {
+  color: #000;
+}
+
+.modal-body {
+  overflow-y: auto;
+  white-space: pre-wrap; /* Allow wrapping */
+  word-wrap: break-word; /* Break long words */
+}
+
+/* Pagination Controls */
+.pagination-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  font-size: 0.9em;
+  color: #555;
+}
+
+.pagination-controls button:disabled {
+  color: #ccc;
+  cursor: not-allowed;
+}
+
+.pagination-controls button:hover:not(:disabled) {
+  color: #0000ff;
+}
