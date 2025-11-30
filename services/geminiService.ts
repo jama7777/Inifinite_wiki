@@ -12,13 +12,11 @@ if (!process.env.API_KEY) {
   );
 }
 
-// FIX: Initialize GoogleGenAI according to guidelines, without non-null assertion.
 const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
 const textModelName = 'gemini-flash-lite-latest';
 const searchModelName = 'gemini-2.5-flash';
 const imageModelName = 'gemini-2.5-flash-image';
 
-// FIX: Export missing AsciiArtData interface.
 export interface AsciiArtData {
   art: string;
   text?: string;
@@ -30,13 +28,14 @@ export type StreamEvent =
 
 /**
  * Streams a definition for a given topic from the Gemini API.
- * @param topic The word or term to define.
- * @returns An async generator that yields structured event objects.
  */
 export async function* streamWikiDefinition(
   topic: string,
 ): AsyncGenerator<StreamEvent, void, undefined> {
-  const prompt = `Using a web search, provide a concise, single-paragraph encyclopedia-style definition for the term: "${topic}". Your answer must be based on the most current information available. Be informative and neutral. Do not use markdown, titles, or any special formatting. Respond with only the text of the definition itself.`;
+  const prompt = `Using a web search, provide a concise, single-paragraph encyclopedia-style definition for the term: "${topic}". Your answer must be based on the most current information available. Be informative and neutral. Do not use markdown, titles, or any special formatting. Respond with only the text of the definition itself.
+  
+  VISUALS: If this concept is abstract or complex, you MAY insert one [DIAGRAM: description] tag at the end to generate an illustration.`;
+  
   const config = { 
     tools: [{googleSearch: {}}],
   };
@@ -66,9 +65,6 @@ export async function* streamWikiDefinition(
 
 /**
  * Streams an answer to a query based on the content of a provided document.
- * @param query The user's question.
- * @param documentContext The text of the document to search within.
- * @returns An async generator yielding stream events.
  */
 export async function* streamInDocumentQuery(
   query: string,
@@ -145,18 +141,11 @@ export async function* streamImageAnalysis(
   }
 }
 
-
 interface AiSearchResult {
   content: string;
   sources: any[];
 }
 
-/**
- * Performs a search for a given question using Google Search grounding.
- * This is non-streaming to ensure grounding data is retrieved reliably.
- * @param question The user's question.
- * @returns A promise that resolves to an object with the content and sources.
- */
 export async function performAiSearch(question: string): Promise<AiSearchResult> {
   try {
     const response = await ai.models.generateContent({

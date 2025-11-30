@@ -175,7 +175,7 @@ const App: React.FC = () => {
 
     const cacheKey = `${activeTab.isWebSearchMode ? 'web:' : 'wiki:'}${activeTab.documentName ? `doc(${activeTab.documentName}):` : ''}${activeTab.currentTopic.toLowerCase()}:${activeTab.webSectionIndex}`;
     
-    // Simple cache check (skip for web sections > 0 to ensure we get next part)
+    // Simple cache check
     if (cache.has(cacheKey) && !activeTab.isLoading && activeTab.content === '') {
       const cachedState = cache.get(cacheKey)!;
       updateActiveTab({
@@ -234,7 +234,6 @@ const App: React.FC = () => {
           }
         } else if (isUrl && !activeTab.documentContext) { 
              // Web Resource / Book Reading
-             // Use section index for pagination
              for await (const event of streamWebResource(trimmedTopic, activeTab.webSectionIndex)) {
                 if (isCancelled) break;
                 if (event.type === 'chunk') {
@@ -369,13 +368,16 @@ const App: React.FC = () => {
         historyStack: activeTab.currentTopic ? [...activeTab.historyStack, activeTab.currentTopic] : activeTab.historyStack,
         futureStack: [],
         currentTopic: newTopic,
+        content: '', // Clear content
         isLoading: true,
         error: null,
         title: newTopic,
-        // Reset web reading state on new search
         webUrl: isUrl ? newTopic.trim() : null,
         webSectionIndex: 0, 
-        generatedDiagrams: {} // Reset diagrams for new topic
+        generatedDiagrams: {},
+        // Exit Ebook/Image mode when navigating via topic link/search
+        isEbookMode: false,
+        imageData: null,
     });
   }, [activeTab.currentTopic, activeTab.historyStack, updateActiveTab]);
 
@@ -391,7 +393,6 @@ const App: React.FC = () => {
         isLoading: true,
         error: null,
         title: prevTopic,
-        // Back resets web position? Or keeps it? Resetting is safer for now.
         webSectionIndex: 0 
     });
   }, [activeTab, updateActiveTab]);
@@ -573,6 +574,7 @@ const App: React.FC = () => {
       updateActiveTab({
         documentContext: text,
         ebookPages: pages,
+        content: pages[0] || '', // Set content immediately
         documentName: file.name,
         isEbookMode: true,
         isWebSearchMode: false,
@@ -650,7 +652,12 @@ const App: React.FC = () => {
         onViewDocument={() => setIsViewerOpen(true)}
         searchHistory={searchHistory}
         isWebSearchMode={activeTab.isWebSearchMode}
-        onWebSearchModeChange={(isWeb) => updateActiveTab({ isWebSearchMode: isWeb })}
+        onWebSearchModeChange={(isWeb) => updateActiveTab({ 
+            isWebSearchMode: isWeb,
+            isLoading: true, // Trigger re-fetch
+            content: '',     // Clear old content
+            generatedDiagrams: {} 
+        })}
       />
       
       <header style={{ textAlign: 'center', marginBottom: '2rem' }}>
@@ -700,7 +707,7 @@ const App: React.FC = () => {
              <ContentDisplay 
                content={activeTab.content} 
                isLoading={activeTab.isLoading} 
-               onWordClick={activeTab.isEbookMode || activeTab.isWebSearchMode || activeTab.imageData ? undefined : handleWordClick} 
+               onWordClick={handleWordClick} 
                images={activeTab.generatedDiagrams}
              />
           )}
