@@ -7,7 +7,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import * as pdfjsLib from 'https://esm.sh/pdfjs-dist@4.5.136/legacy/build/pdf.mjs';
 import ePub from 'epubjs';
 import mammoth from 'https://esm.sh/mammoth@1.7.2';
-import { streamWikiDefinition, performAiSearch, streamInDocumentQuery, streamYouTubeSummary, streamWebResource, streamImageAnalysis, generateInfoDiagram } from './services/geminiService';
+import { streamWikiDefinition, performAiSearch, streamInDocumentQuery, streamYouTubeSummary, streamWebResource, streamImageAnalysis, generateInfoDiagram, streamTranslation } from './services/geminiService';
 import ContentDisplay from './components/ContentDisplay';
 import SearchBar from './components/SearchBar';
 import LoadingSkeleton from './components/LoadingSkeleton';
@@ -32,9 +32,10 @@ interface CachedTopicState {
   content: string;
   generationTime: number | null;
   sources?: any[];
+  language?: string;
 }
 
-interface ImageData {
+interface FileData {
   base64: string;
   mimeType: string;
 }
@@ -61,7 +62,8 @@ interface Tab {
   isEbookMode: boolean;
   documentName: string | null;
   documentContext: string | null;
-  imageData: ImageData | null;
+  // Merged imageData into a general fileData for both images and documents without text
+  fileData: FileData | null;
   ebookPages: string[];
   currentPage: number;
   
@@ -69,6 +71,9 @@ interface Tab {
   webUrl: string | null;
   webSectionIndex: number;
   generatedDiagrams: Record<string, string>; // prompt -> base64
+
+  // Settings
+  language: string;
 }
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -88,12 +93,13 @@ const createNewTab = (id: string = generateId()): Tab => ({
   isEbookMode: false,
   documentName: null,
   documentContext: null,
-  imageData: null,
+  fileData: null,
   ebookPages: [],
   currentPage: 0,
   webUrl: null,
   webSectionIndex: 0,
   generatedDiagrams: {},
+  language: 'English',
 });
 
 const App: React.FC = () => {
@@ -160,20 +166,50 @@ const App: React.FC = () => {
     if (!activeTab.currentTopic) return;
     
     // Ebook Mode (Local File)
-    if (activeTab.isEbookMode && !activeTab.isWebSearchMode && !activeTab.imageData) {
+    // If we have TEXT content (pagination available)
+    if (activeTab.isEbookMode && !activeTab.isWebSearchMode && !activeTab.fileData && activeTab.documentContext) {
       const pageContent = activeTab.ebookPages[activeTab.currentPage] ?? '';
-      if (activeTab.content !== pageContent) {
-        updateActiveTab({ 
-            content: pageContent, 
-            isLoading: false, 
-            error: null, 
-            groundingSources: [] 
-        });
+      
+      // If language is not English, we need to Translate the page content dynamically.
+      if (activeTab.language !== 'English') {
+          // If we are already displaying content that seems to match the page AND isn't just the english text (simple heuristic: if loading is true we fetch)
+          // We rely on isLoading being set to true when page changes in translation mode.
+          if (activeTab.isLoading) {
+              // Trigger translation
+              let isCancelled = false;
+              const fetchTranslation = async () => {
+                 let acc = '';
+                 try {
+                     for await (const event of streamTranslation(pageContent, activeTab.language)) {
+                         if (isCancelled) break;
+                         if (event.type === 'chunk') {
+                             acc += event.text;
+                             updateActiveTab({ content: acc });
+                         }
+                     }
+                     updateActiveTab({ isLoading: false });
+                 } catch (e) {
+                     if (!isCancelled) updateActiveTab({ error: "Translation failed", isLoading: false });
+                 }
+              };
+              fetchTranslation();
+              return () => { isCancelled = true; };
+          }
+      } else {
+          // Standard English display
+          if (activeTab.content !== pageContent) {
+            updateActiveTab({ 
+                content: pageContent, 
+                isLoading: false, 
+                error: null, 
+                groundingSources: [] 
+            });
+          }
       }
       return;
     }
 
-    const cacheKey = `${activeTab.isWebSearchMode ? 'web:' : 'wiki:'}${activeTab.documentName ? `doc(${activeTab.documentName}):` : ''}${activeTab.currentTopic.toLowerCase()}:${activeTab.webSectionIndex}`;
+    const cacheKey = `${activeTab.isWebSearchMode ? 'web:' : 'wiki:'}${activeTab.documentName ? `doc(${activeTab.documentName}):` : ''}${activeTab.currentTopic.toLowerCase()}:${activeTab.webSectionIndex}:${activeTab.language}`;
     
     // Simple cache check
     if (cache.has(cacheKey) && !activeTab.isLoading && activeTab.content === '') {
@@ -202,14 +238,15 @@ const App: React.FC = () => {
       try {
         const topic = activeTab.currentTopic;
         const trimmedTopic = topic.trim();
+        const lang = activeTab.language;
         
         const isYouTubeUrl = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/i.test(trimmedTopic);
         // Robust URL detection
         const isUrl = /^(https?:\/\/[^\s]+\.[^\s]+)/i.test(trimmedTopic);
 
-        if (activeTab.imageData) {
-           // Image Analysis
-           for await (const event of streamImageAnalysis(topic, activeTab.imageData.base64, activeTab.imageData.mimeType)) {
+        // Case 1: Image Analysis (explicitly treated as such if mimeType is image)
+        if (activeTab.fileData && activeTab.fileData.mimeType.startsWith('image/')) {
+           for await (const event of streamImageAnalysis(topic, activeTab.fileData.base64, activeTab.fileData.mimeType, lang)) {
              if (isCancelled) break;
              if (event.type === 'chunk') {
                 accumulatedContent += event.text;
@@ -217,9 +254,10 @@ const App: React.FC = () => {
                 setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, content: accumulatedContent } : t));
              }
            }
-        } else if (isYouTubeUrl) {
-           // Video Summary
-           for await (const event of streamYouTubeSummary(trimmedTopic)) {
+        } 
+        // Case 2: YouTube Video
+        else if (isYouTubeUrl) {
+           for await (const event of streamYouTubeSummary(trimmedTopic, lang)) {
             if (isCancelled) break;
             if (event.type === 'chunk') {
                 if (event.text) accumulatedContent += event.text;
@@ -232,9 +270,10 @@ const App: React.FC = () => {
                 } : t));
             }
           }
-        } else if (isUrl && !activeTab.documentContext) { 
-             // Web Resource / Book Reading
-             for await (const event of streamWebResource(trimmedTopic, activeTab.webSectionIndex)) {
+        } 
+        // Case 3: External URL Reading
+        else if (isUrl && !activeTab.documentContext && !activeTab.fileData) { 
+             for await (const event of streamWebResource(trimmedTopic, activeTab.webSectionIndex, lang)) {
                 if (isCancelled) break;
                 if (event.type === 'chunk') {
                     if (event.text) accumulatedContent += event.text;
@@ -247,10 +286,16 @@ const App: React.FC = () => {
                     } : t));
                 }
             }
-        } else if (activeTab.isWebSearchMode) {
-          if (activeTab.documentContext) {
-            // In-Document Query
-            for await (const event of streamInDocumentQuery(topic, activeTab.documentContext)) {
+        } 
+        // Case 4: Web Search Mode (Grounding)
+        else if (activeTab.isWebSearchMode) {
+          if (activeTab.documentContext || activeTab.fileData) {
+            // In-Document Query with possible Web Search enabled (mixed mode not strictly supported by UI yet, but handled here)
+             const params = activeTab.fileData 
+                ? { mimeType: activeTab.fileData.mimeType, data: activeTab.fileData.base64 } 
+                : undefined;
+             
+            for await (const event of streamInDocumentQuery(topic, activeTab.documentContext, params, lang)) {
               if (isCancelled) break;
               if (event.type === 'chunk') {
                 accumulatedContent += event.text;
@@ -260,7 +305,7 @@ const App: React.FC = () => {
             }
           } else {
              // Standard Web Search
-             const { content, sources } = await performAiSearch(topic);
+             const { content, sources } = await performAiSearch(topic, lang);
              if (isCancelled) return;
              finalContentRef.current = content;
              finalSourcesRef.current = sources;
@@ -270,19 +315,36 @@ const App: React.FC = () => {
                  groundingSources: sources 
              } : t));
           }
-        } else {
-           // Wiki Definition
-           for await (const event of streamWikiDefinition(topic)) {
-              if (isCancelled) break;
-              if (event.type === 'chunk') {
-                if (event.text) accumulatedContent += event.text;
-                if (event.sources) finalSourcesRef.current = event.sources;
-                finalContentRef.current = accumulatedContent;
-                setTabs(prev => prev.map(t => t.id === activeTabId ? { 
-                    ...t, 
-                    content: accumulatedContent, 
-                    groundingSources: finalSourcesRef.current 
-                } : t));
+        } 
+        // Case 5: Document Query (Text or Multimodal/Binary) or Default Wiki
+        else {
+           if (activeTab.documentContext || activeTab.fileData) {
+              const params = activeTab.fileData 
+                ? { mimeType: activeTab.fileData.mimeType, data: activeTab.fileData.base64 } 
+                : undefined;
+
+              for await (const event of streamInDocumentQuery(topic, activeTab.documentContext, params, lang)) {
+                if (isCancelled) break;
+                if (event.type === 'chunk') {
+                   accumulatedContent += event.text;
+                   finalContentRef.current = accumulatedContent;
+                   setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, content: accumulatedContent } : t));
+                }
+              }
+           } else {
+              // Wiki Definition
+              for await (const event of streamWikiDefinition(topic, lang)) {
+                  if (isCancelled) break;
+                  if (event.type === 'chunk') {
+                    if (event.text) accumulatedContent += event.text;
+                    if (event.sources) finalSourcesRef.current = event.sources;
+                    finalContentRef.current = accumulatedContent;
+                    setTabs(prev => prev.map(t => t.id === activeTabId ? { 
+                        ...t, 
+                        content: accumulatedContent, 
+                        groundingSources: finalSourcesRef.current 
+                    } : t));
+                  }
               }
            }
         }
@@ -302,7 +364,8 @@ const App: React.FC = () => {
              newCache.set(cacheKey, { 
                  content: finalContentRef.current, 
                  generationTime: genTime, 
-                 sources: finalSourcesRef.current 
+                 sources: finalSourcesRef.current,
+                 language: activeTab.language 
              });
              return newCache;
           });
@@ -327,8 +390,9 @@ const App: React.FC = () => {
       activeTab.isEbookMode, 
       activeTab.currentPage,
       activeTab.documentContext,
-      activeTab.imageData,
-      activeTab.webSectionIndex
+      activeTab.fileData,
+      activeTab.webSectionIndex,
+      activeTab.language
   ]);
 
   const handleTabSwitch = (id: string) => setActiveTabId(id);
@@ -375,11 +439,19 @@ const App: React.FC = () => {
         webUrl: isUrl ? newTopic.trim() : null,
         webSectionIndex: 0, 
         generatedDiagrams: {},
-        // Exit Ebook/Image mode when navigating via topic link/search
-        isEbookMode: false,
-        imageData: null,
     });
-  }, [activeTab.currentTopic, activeTab.historyStack, updateActiveTab]);
+  }, [activeTab.currentTopic, activeTab.historyStack, updateActiveTab, activeTab.isEbookMode]);
+
+  const handleLanguageChange = useCallback((lang: string) => {
+    updateActiveTab({ 
+      language: lang,
+      // If we are in ebook mode (text), we need to trigger a loading state to force the translation effect
+      isLoading: true,
+      // If NOT in ebook text mode, we also want to trigger fetch
+      // If we are in Wiki/Search mode, clear content to restart the stream in new language
+      content: activeTab.isEbookMode && !activeTab.isWebSearchMode && !activeTab.fileData ? activeTab.content : '' 
+    });
+  }, [updateActiveTab, activeTab.isEbookMode, activeTab.isWebSearchMode, activeTab.fileData, activeTab.content]);
 
   const handleBack = useCallback(() => {
     if (activeTab.historyStack.length === 0) return;
@@ -418,11 +490,13 @@ const App: React.FC = () => {
     const isUrl = /^(https?:\/\/[^\s]+\.[^\s]+)/i.test(topic);
 
     if (activeTab.isEbookMode && !isUrl) {
-      updateActiveTab({ isWebSearchMode: true });
+       // Keep isWebSearchMode as is
+    } else if (!activeTab.isEbookMode && !isUrl) {
+       // Regular search
     }
     
     handleTopicChange(topic);
-  }, [activeTab.isEbookMode, handleTopicChange, updateActiveTab]);
+  }, [activeTab.isEbookMode, handleTopicChange]);
 
   const handleWordClick = useCallback((word: string) => {
     const newTopic = word.trim().replace(/[.,!?;:()"']$/, '');
@@ -537,53 +611,65 @@ const App: React.FC = () => {
     updateActiveTab({ isLoading: true, error: null });
 
     try {
-      if (file.type.startsWith('image/')) {
-        const base64 = await blobToBase64(file);
-        updateActiveTab({
-          imageData: { base64, mimeType: file.type },
-          documentName: file.name,
-          isEbookMode: true,
-          isWebSearchMode: false,
-          currentTopic: 'Image Analysis',
-          title: file.name,
-          historyStack: [],
-          isLoading: true
-        });
-        return;
-      }
-
+      const base64 = await blobToBase64(file);
       let text = '';
       let pages: string[] = [];
 
-      if (file.type === 'application/epub+zip') {
-        const epubContent = await extractContentFromEpub(file);
-        text = epubContent.fullText;
-        pages = epubContent.pages;
-      } else if (file.type === 'application/pdf') {
-        const pdfContent = await extractTextFromPdf(file);
-        text = pdfContent.fullText;
-        pages = pdfContent.pages;
-      } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-        text = await extractTextFromDocx(file);
-        pages = [text];
-      } else {
-        text = await file.text();
-        pages = [text];
+      try {
+        if (file.type === 'application/epub+zip') {
+          const epubContent = await extractContentFromEpub(file);
+          text = epubContent.fullText;
+          pages = epubContent.pages;
+        } else if (file.type === 'application/pdf') {
+          const pdfContent = await extractTextFromPdf(file);
+          text = pdfContent.fullText;
+          pages = pdfContent.pages;
+        } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+          text = await extractTextFromDocx(file);
+          pages = [text];
+        } else if (file.type.startsWith('image/')) {
+           text = ''; 
+        } else {
+          text = await file.text();
+          pages = [text];
+        }
+      } catch (e) {
+         console.warn("Text extraction failed or skipped, falling back to binary handling.", e);
+         text = '';
       }
       
-      updateActiveTab({
-        documentContext: text,
-        ebookPages: pages,
-        content: pages[0] || '', // Set content immediately
-        documentName: file.name,
-        isEbookMode: true,
-        isWebSearchMode: false,
-        currentPage: 0,
-        currentTopic: file.name,
-        title: file.name,
-        historyStack: [],
-        isLoading: false
-      });
+      if (!text || text.trim().length === 0) {
+          console.log("No text extracted. Using Multimodal mode.");
+          updateActiveTab({
+            fileData: { base64, mimeType: file.type || 'application/octet-stream' },
+            documentContext: null,
+            ebookPages: [],
+            documentName: file.name,
+            isEbookMode: true,
+            isWebSearchMode: false,
+            content: '', 
+            currentTopic: 'Analyze Document', 
+            title: file.name,
+            historyStack: [],
+            isLoading: true
+          });
+
+      } else {
+          updateActiveTab({
+            documentContext: text,
+            ebookPages: pages,
+            fileData: null,
+            content: pages[0] || '', 
+            documentName: file.name,
+            isEbookMode: true,
+            isWebSearchMode: false,
+            currentPage: 0,
+            currentTopic: file.name,
+            title: file.name,
+            historyStack: [],
+            isLoading: false
+          });
+      }
 
     } catch (err: unknown) {
       updateActiveTab({ 
@@ -597,24 +683,42 @@ const App: React.FC = () => {
     updateActiveTab({
         documentContext: null,
         documentName: null,
-        imageData: null,
+        fileData: null,
         isEbookMode: false,
         ebookPages: [],
         currentPage: 0,
         isWebSearchMode: false,
         currentTopic: 'Hypertext',
         title: 'Hypertext',
-        historyStack: []
+        historyStack: [],
+        language: 'English' // Reset language on close
     });
     const fileInput = document.getElementById('file-upload') as HTMLInputElement;
     if (fileInput) fileInput.value = '';
   }, [updateActiveTab]);
 
-  // Handle local eBook pagination
-  const handlePrevPage = () => updateActiveTab({ currentPage: Math.max(activeTab.currentPage - 1, 0) });
-  const handleNextPage = () => updateActiveTab({ currentPage: Math.min(activeTab.currentPage + 1, activeTab.ebookPages.length - 1) });
+  // Handle local eBook pagination with translation support
+  const handlePrevPage = () => {
+      const newPage = Math.max(activeTab.currentPage - 1, 0);
+      const isTranslationNeeded = activeTab.language !== 'English';
+      updateActiveTab({ 
+          currentPage: newPage,
+          // If translating, trigger loading state to force the translation hook
+          isLoading: isTranslationNeeded,
+          content: isTranslationNeeded ? '' : activeTab.ebookPages[newPage]
+      });
+  };
+
+  const handleNextPage = () => {
+      const newPage = Math.min(activeTab.currentPage + 1, activeTab.ebookPages.length - 1);
+      const isTranslationNeeded = activeTab.language !== 'English';
+      updateActiveTab({ 
+          currentPage: newPage,
+          isLoading: isTranslationNeeded,
+          content: isTranslationNeeded ? '' : activeTab.ebookPages[newPage]
+      });
+  };
   
-  // Handle Web Resource Pagination
   const handlePrevWebSection = () => {
     const newIndex = Math.max(activeTab.webSectionIndex - 1, 0);
     updateActiveTab({ webSectionIndex: newIndex, isLoading: true, generatedDiagrams: {} });
@@ -654,16 +758,18 @@ const App: React.FC = () => {
         isWebSearchMode={activeTab.isWebSearchMode}
         onWebSearchModeChange={(isWeb) => updateActiveTab({ 
             isWebSearchMode: isWeb,
-            isLoading: true, // Trigger re-fetch
-            content: '',     // Clear old content
+            isLoading: true, 
+            content: '',     
             generatedDiagrams: {} 
         })}
+        currentLanguage={activeTab.language}
+        onLanguageChange={handleLanguageChange}
       />
       
       <header style={{ textAlign: 'center', marginBottom: '2rem' }}>
         <h1 style={{ letterSpacing: '0.2em', textTransform: 'uppercase' }}>
           {activeTab.isWebSearchMode && !activeTab.documentName ? 'WEB SEARCH' : 
-           activeTab.imageData ? 'IMAGE ANALYSIS' :
+           activeTab.fileData && activeTab.fileData.mimeType.startsWith('image/') ? 'IMAGE ANALYSIS' :
            activeTab.isEbookMode ? 'DOCUMENT READER' : 'INFINITE WIKI'}
         </h1>
       </header>
@@ -671,13 +777,13 @@ const App: React.FC = () => {
       <main>
         <div>
           <h2 style={{ marginBottom: '1rem', textTransform: 'capitalize' }}>
-            {displayTopic}
+            {displayTopic} {activeTab.language !== 'English' && <span style={{fontSize: '0.6em', color: '#666'}}>({activeTab.language})</span>}
           </h2>
 
-          {activeTab.imageData && (
+          {activeTab.fileData && activeTab.fileData.mimeType.startsWith('image/') && (
              <div className="diagram-container">
                <img 
-                 src={`data:${activeTab.imageData.mimeType};base64,${activeTab.imageData.base64}`} 
+                 src={`data:${activeTab.fileData.mimeType};base64,${activeTab.fileData.base64}`} 
                  alt="Uploaded content" 
                  className="diagram-image" 
                  style={{ maxHeight: '300px' }}
@@ -685,8 +791,7 @@ const App: React.FC = () => {
              </div>
           )}
           
-          {/* Controls for Local eBook */}
-          {activeTab.isEbookMode && !activeTab.isWebSearchMode && activeTab.ebookPages.length > 1 && (
+          {activeTab.isEbookMode && !activeTab.isWebSearchMode && !activeTab.fileData && activeTab.ebookPages.length > 1 && (
             <div className="pagination-controls">
               <button onClick={handlePrevPage} disabled={activeTab.isLoading || activeTab.currentPage === 0}>Previous</button>
               <span>Page {activeTab.currentPage + 1} of {activeTab.ebookPages.length}</span>
@@ -712,7 +817,6 @@ const App: React.FC = () => {
              />
           )}
 
-          {/* Controls for Web Resource (Infinite Reading) */}
           {isWebUrlMode && !activeTab.isLoading && !activeTab.error && (
              <div className="pagination-controls" style={{ marginTop: '2rem' }}>
                <button onClick={handlePrevWebSection} disabled={activeTab.webSectionIndex === 0}>Previous Section</button>
@@ -740,7 +844,7 @@ const App: React.FC = () => {
       
       {isViewerOpen && (
         <DocumentViewer
-          content={activeTab.documentContext || (activeTab.imageData ? "Image content cannot be viewed as text." : null)}
+          content={activeTab.documentContext || (activeTab.fileData ? "Content format is binary/scanned. Please ask questions to explore it." : null)}
           documentName={activeTab.documentName}
           onClose={() => setIsViewerOpen(false)}
         />

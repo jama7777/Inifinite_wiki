@@ -20,7 +20,22 @@ interface SearchBarProps {
   searchHistory: string[];
   isWebSearchMode: boolean;
   onWebSearchModeChange: (isWebSearch: boolean) => void;
+  currentLanguage: string;
+  onLanguageChange: (lang: string) => void;
 }
+
+const LANGUAGES = [
+  'English',
+  'Spanish',
+  'French',
+  'German',
+  'Chinese (Simplified)',
+  'Japanese',
+  'Hindi',
+  'Arabic',
+  'Portuguese',
+  'Russian'
+];
 
 const SearchBar: React.FC<SearchBarProps> = ({
   onSearch,
@@ -37,21 +52,25 @@ const SearchBar: React.FC<SearchBarProps> = ({
   searchHistory,
   isWebSearchMode,
   onWebSearchModeChange,
+  currentLanguage,
+  onLanguageChange
 }) => {
   const [query, setQuery] = useState('');
   const [isInputFocused, setIsInputFocused] = useState(false);
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (query.trim() && !isLoading) {
       onSearch(query.trim());
       setQuery(''); // Clear the input field after search
+      setIsInputFocused(false); // Close dropdown
     }
   };
 
   const handleHistorySelect = (topic: string) => {
     onSearch(topic);
     setQuery(''); // Clear input
+    setIsInputFocused(false);
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -95,20 +114,33 @@ const SearchBar: React.FC<SearchBarProps> = ({
         </div>
         
         <form onSubmit={handleSubmit} className="search-form" role="search">
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onFocus={() => setIsInputFocused(true)}
-            onBlur={() => setTimeout(() => setIsInputFocused(false), 200)} // Delay to allow clicks
-            placeholder={placeholderText}
-            className="search-input"
-            aria-label="Search for a topic"
-            disabled={isLoading}
-            autoComplete="off"
-          />
+          <div style={{ display: 'flex', alignItems: 'center', width: '100%', position: 'relative' }}>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onFocus={() => setIsInputFocused(true)}
+              // Increased delay and added check to allow click propagation on history items
+              onBlur={() => setTimeout(() => setIsInputFocused(false), 300)}
+              placeholder={placeholderText}
+              className="search-input"
+              aria-label="Search for a topic"
+              disabled={isLoading}
+              autoComplete="off"
+            />
+            <button 
+              type="submit" 
+              className="search-submit-button" 
+              disabled={isLoading || !query.trim()}
+              aria-label="Submit Search"
+            >
+              GO
+            </button>
+          </div>
           {isInputFocused && searchHistory.length > 0 && !documentName && !isWebSearchMode && (
-            <SearchHistoryDropdown history={searchHistory} onSelect={handleHistorySelect} />
+            <div onMouseDown={(e) => e.preventDefault()}> {/* Prevent blur on mousedown */}
+              <SearchHistoryDropdown history={searchHistory} onSelect={handleHistorySelect} />
+            </div>
           )}
         </form>
         <button onClick={onRandom} className="nav-button" disabled={isLoading || !!documentName}>
@@ -116,6 +148,25 @@ const SearchBar: React.FC<SearchBarProps> = ({
         </button>
       </div>
       <div className="document-controls">
+        <select 
+          value={currentLanguage} 
+          onChange={(e) => onLanguageChange(e.target.value)}
+          className="language-selector"
+          disabled={isLoading}
+          style={{ 
+            border: 'none', 
+            background: 'transparent', 
+            font: 'inherit', 
+            color: '#555', 
+            cursor: 'pointer',
+            paddingRight: '1rem'
+          }}
+        >
+          {LANGUAGES.map(lang => (
+            <option key={lang} value={lang}>{lang}</option>
+          ))}
+        </select>
+
         <label className="ai-search-toggle">
           Web Search
           <div className="toggle-switch">
@@ -131,7 +182,8 @@ const SearchBar: React.FC<SearchBarProps> = ({
               id="file-upload"
               onChange={handleFileChange}
               style={{ display: 'none' }}
-              accept=".txt,.md,.pdf,.epub,.docx,.jpg,.jpeg,.png,.webp"
+              // Allow all files to let the app attempt to handle them (either via text extraction or multimodal fallback)
+              accept="*" 
               disabled={isLoading}
             />
             <label htmlFor="file-upload" className={`nav-button ${isLoading ? 'disabled' : ''}`}>
